@@ -11,7 +11,8 @@ conn.execute(
         title TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'todo',
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        priority TEXT NOT NULL DEFAULT 'medium'
     )"""
 )
 for i in range(1, 26):

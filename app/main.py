@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -25,33 +26,47 @@ def get_conn() -> sqlite3.Connection:
             title TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'todo',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            priority TEXT NOT NULL DEFAULT 'medium'
         )
         """
     )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "priority" not in columns:
+        conn.execute("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'")
     return conn
 
 
 class TaskCreate(BaseModel):
     title: str
     description: str = ""
+    priority: Literal["low", "medium", "high"] = "medium"
 
 
 @app.get("/api/tasks")
-def list_tasks(status: str | None = None, page: int = 1, page_size: int = 10):
-    where, params = "", []
+def list_tasks(
+    status: str | None = None,
+    priority: str | None = None,
+    page: int = 1,
+    page_size: int = 10,
+):
+    conditions, params = [], []
     if status:
-        where = "WHERE status = ?"
+        conditions.append("status = ?")
         params.append(status)
+    if priority:
+        conditions.append("priority = ?")
+        params.append(priority)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-    offset = page * page_size
+    offset = (page - 1) * page_size
 
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT * FROM tasks {where} ORDER BY id LIMIT ? OFFSET ?",
             params + [page_size, offset],
         ).fetchall()
-        total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        total = conn.execute(f"SELECT COUNT(*) FROM tasks {where}", params).fetchone()[0]
 
     return {
         "items": [dict(r) for r in rows],
@@ -65,8 +80,8 @@ def list_tasks(status: str | None = None, page: int = 1, page_size: int = 10):
 def create_task(task: TaskCreate):
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO tasks (title, description) VALUES (?, ?)",
-            (task.title, task.description),
+            "INSERT INTO tasks (title, description, priority) VALUES (?, ?, ?)",
+            (task.title, task.description, task.priority),
         )
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
     return dict(row)
